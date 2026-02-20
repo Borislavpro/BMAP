@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <title>BMAP</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --pa-blue: #1a73e8;
+            --google-blue: #1a73e8;
+            --beton-green: #2db928;
+            --sidebar-bg: #ffffff;
+            --text: #202124;
+            --active-btn: #34a853;
+        }
+        body.dark-mode { --sidebar-bg: #202124; --text: #e8eaed; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; height: 100vh; display: flex; background: var(--sidebar-bg); color: var(--text); overflow: hidden; position: relative; }
+
+        /* ФОН С ТИР SCANIA ЗА ЛОГИНА */
+        #auth-screen {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)),
+                        url('https://images.unsplash.com/photo-1586191582151-f746323497fd?q=80&w=2000&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-card {
+            background: rgba(255, 255, 255, 0.92);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            width: 360px;
+            text-align: center;
+            backdrop-filter: blur(8px);
+        }
+
+        #sidebar { width: 400px; background: var(--sidebar-bg); border-right: 1px solid #dadce0; z-index: 1001; display: none; flex-direction: column; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
+        #sidebar.hidden { transform: translateX(-400px); position: absolute; height: 100%; }
+
+        #toggle-sidebar { position: absolute; left: 400px; top: 20px; z-index: 1002; background: var(--pa-blue); color: white; border: none; padding: 15px 10px; border-radius: 0 8px 8px 0; cursor: pointer; transition: left 0.3s ease; box-shadow: 3px 0 6px rgba(0,0,0,0.16); font-weight: bold; }
+        #sidebar.hidden + #toggle-sidebar { left: 0; }
+
+        /* Снайперска Търсачка */
+        .search-container { position: absolute; top: 20px; left: 430px; z-index: 1000; display: flex; background: white; padding: 8px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); transition: left 0.3s ease; border: 1px solid #dfe1e5; width: 400px; }
+        #sidebar.hidden ~ .search-container { left: 80px; }
+        #search-input { flex: 1; border: none; outline: none; font-size: 16px; padding: 5px 10px; }
+        .search-btn { background: var(--pa-blue); color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+        #map { flex: 1; z-index: 1; outline: none; }
+
+        .header { background: var(--pa-blue); color: white; padding: 18px; font-size: 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; letter-spacing: 1px; }
+        .content { padding: 20px; overflow-y: auto; flex: 1; scrollbar-width: thin; }
+
+        .section-title { font-size: 12px; font-weight: 700; color: #5f6368; text-transform: uppercase; margin: 25px 0 10px; letter-spacing: 1px; border-left: 4px solid var(--pa-blue); padding-left: 10px; }
+
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #dadce0; border-radius: 6px; box-sizing: border-box; font-size: 14px; transition: border 0.2s; }
+        input:focus { border-color: var(--pa-blue); outline: none; }
+
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; margin-bottom: 12px; transition: all 0.2s; font-size: 14px; text-transform: uppercase; }
+        .btn-blue { background: var(--google-blue); color: white; }
+        .btn-blue:hover { background: #1557b0; }
+        .btn-green { background: var(--beton-green); color: white; }
+        .btn-dark { background: #3c4043; color: white; }
+        .btn-active { background: var(--active-btn) !important; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
+
+        .coord-box { background: #f8f9fa; border: 1px solid #dadce0; padding: 15px; border-radius: 6px; font-family: 'Courier New', monospace; font-size: 14px; text-align: center; color: var(--pa-blue); font-weight: bold; margin-bottom: 15px; }
+        .history-item { padding: 15px; border-bottom: 1px solid #f1f3f4; display: flex; justify-content: space-between; align-items: center; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+        .history-item:hover { background: #f8f9fa; }
+        .del-btn { color: #ea4335; cursor: pointer; padding: 5px; font-size: 20px; }
+
+        /* Махаме панела за инструкции на рутинга */
+        .leaflet-routing-container { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="auth-screen">
+    <div class="auth-card">
+        <h1 style="color:var(--pa-blue); margin: 0 0 10px 0; font-size: 24px;">BMAP ENTERPRISE</h1>
+        <p style="color: #5f6368; margin-bottom: 30px;">Система за Глобална Логистика</p>
+        <input type="email" id="email" placeholder="Потребителски имейл">
+        <input type="password" id="password" placeholder="Парола">
+        <button class="btn btn-blue" onclick="handleAuth('login')">Влез в Системата</button>
+        <button class="btn" onclick="handleAuth('reg')" style="background:transparent; color:var(--pa-blue); border: 1px solid var(--pa-blue);">Регистрация</button>
+    </div>
+</div>
+
+<div id="sidebar">
+    <div class="header">
+        <span>BMAP</span>
+        <div>
+            <button onclick="toggleDarkMode()" title="Dark Mode" style="background:none; border:none; cursor:pointer; font-size: 18px;">🌙</button>
+            <button onclick="auth.signOut()" title="Изход" style="background:none; border:none; color:white; cursor:pointer; margin-left:15px; font-size: 18px;">🚪</button>
+        </div>
+    </div>
+    <div class="content">
+        <div class="section-title">Прецизни Координати</div>
+        <div id="coord-display" class="coord-box">Снайперски режим: OFF</div>
+        <div style="display: flex; gap: 8px;">
+            <button id="btn-gps" class="btn btn-dark" onclick="activateClickMode('gps')">🎯 GPS Точка</button>
+            <button id="btn-marker" class="btn btn-blue" onclick="activateClickMode('marker')">📍 Габърче</button>
+        </div>
+
+        <div class="section-title">Глобален Маршрут</div>
+        <div id="waypoint-list">
+            <input type="text" class="route-input" id="start-node" placeholder="Начало (Град/Адрес/Обект)">
+            <input type="text" class="route-input" id="end-node" placeholder="Край (Дестинация)">
+        </div>
+        <button class="btn" style="background:#f1f3f4; color:#3c4043; border: 1px solid #dadce0;" onclick="addNewWaypoint()">+ Добави Спирка</button>
+        <button class="btn btn-blue" style="height: 55px; font-size: 16px;" onclick="runRoute()">🚀 ГЕНЕРИРАЙ ТРАСЕ</button>
+
+        <div id="calc-output" style="padding:15px; background:#e8f0fe; border-radius:8px; margin:10px 0; display:none; color:#1967d2; font-weight:bold; text-align: center; border: 1px solid #1a73e8;">
+            Километри: <span id="dist-val">0</span> км | Гориво: <span id="fuel-val">0</span> л.
+        </div>
+
+        <button class="btn btn-green" onclick="saveToArchive()">⭐ ЗАПИШИ В АРХИВ</button>
+
+        <div class="section-title">История (Авто)</div>
+        <div id="auto-history"></div>
+
+        <div class="section-title">Фирмен Архив (Ръчно)</div>
+        <div id="manual-archive"></div>
+    </div>
+</div>
+
+<button id="toggle-sidebar" onclick="toggleSidebar()">◀</button>
+
+<div class="search-container">
+    <input type="text" id="search-input" placeholder="Въведи координатите...">
+    <button class="search-btn" onclick="searchLocation()">ТЪРСИ</button>
+</div>
+
+<div id="map"></div>
+
+<script>
+    // Firebase Config
+    const firebaseConfig = {
+        apiKey: "AIzaSyBLtoCCTQmvldvXB7xhRz08iD5xePt7lQw",
+        authDomain: "bmap-da785.firebaseapp.com",
+        projectId: "bmap-da785",
+        storageBucket: "bmap-da785.firebasestorage.app",
+        messagingSenderId: "42067008605",
+        appId: "1:42067008605:web:52a5a39b53f2e0549181b4",
+        databaseURL: "https://bmap-da785-default-rtdb.firebaseio.com/"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const rdb = firebase.database();
+
+    // Картни слоеве (Layers)
+    const googleRoads = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3'], maxZoom: 20});
+    const googleSatellite = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3'], maxZoom: 20});
+    const googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3'], maxZoom: 20});
+    const googleTraffic = L.tileLayer('https://{s}.google.com/vt/lyrs=m,traffic&x={x}&y={y}&z={z}', {subdomains:['mt0','mt1','mt2','mt3'], maxZoom: 20});
+
+    const map = L.map('map', {
+        zoomControl: false,
+        layers: [googleRoads],
+        doubleClickZoom: false
+    }).setView([42.1354, 24.7453], 13);
+
+    // Панел за слоеве
+    const baseLayers = {
+        "🗺️ Пътна карта": googleRoads,
+        "🛰️ Сателит": googleSatellite,
+        "🌍 Хибрид": googleHybrid,
+        "🚦 Трафик": googleTraffic
+    };
+    L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    let routingControl = null;
+    let clickMode = null;
+    let currentRouteData = null;
+    let currentAutoHistory = [];
+    let activeMarkers = [];
+
+    // Auth Логика
+    function handleAuth(mode) {
+        const e = document.getElementById('email').value, p = document.getElementById('password').value;
+        if (mode === 'login') auth.signInWithEmailAndPassword(e, p).catch(err => alert("Грешка при вход: " + err.message));
+        else auth.createUserWithEmailAndPassword(e, p).catch(err => alert("Грешка при регистрация: " + err.message));
+    }
+
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            document.getElementById('auth-screen').style.display='none';
+            document.getElementById('sidebar').style.display='flex';
+            document.getElementById('toggle-sidebar').style.display='block';
+            listenToData();
+        } else {
+            document.getElementById('auth-screen').style.display='flex';
+            document.getElementById('sidebar').style.display='none';
+            document.getElementById('toggle-sidebar').style.display='none';
+        }
+    });
+
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const btn = document.getElementById('toggle-sidebar');
+        sidebar.classList.toggle('hidden');
+        btn.innerText = sidebar.classList.contains('hidden') ? "▶" : "◀";
+    }
+
+    function toggleDarkMode() { document.body.classList.toggle('dark-mode'); }
+
+    // ТЪРСЕНЕ НА ОБЕКТИ - СНАЙПЕРСКА ТОЧНОСТ
+    async function searchLocation() {
+        const q = document.getElementById('search-input').value;
+        if (!q) return;
+
+        clearOldMarkers();
+
+        const pt = await getPoint(q);
+        if (pt) {
+            map.flyTo(pt, 17, { animate: true, duration: 1.5 });
+            const m = L.marker(pt).addTo(map).bindPopup(`<b>${q}</b><br>Двойно кликни за махане`).openPopup();
+            m.on('dblclick', () => map.removeLayer(m));
+            activeMarkers.push(m);
+        } else {
+            alert("Обектът не е намерен в базата данни.");
+        }
+    }
+
+    function clearOldMarkers() {
+        activeMarkers.forEach(m => map.removeLayer(m));
+        activeMarkers = [];
+    }
+
+    function activateClickMode(mode) {
+        document.getElementById('btn-gps').classList.remove('btn-active');
+        document.getElementById('btn-marker').classList.remove('btn-active');
+        clickMode = mode;
+        document.getElementById('map').style.cursor = "crosshair";
+        if(mode === 'gps') document.getElementById('btn-gps').classList.add('btn-active');
+        if(mode === 'marker') document.getElementById('btn-marker').classList.add('btn-active');
+    }
+
+    map.on('click', function(e) {
+        if (!clickMode) return;
+        const coords = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+
+        if (clickMode === 'gps') {
+            document.getElementById('coord-display').innerText = coords;
+            document.getElementById('end-node').value = coords;
+        } else if (clickMode === 'marker') {
+            clearOldMarkers();
+            const m = L.marker(e.latlng).addTo(map).bindPopup(`GPS: ${coords}`);
+            m.on('dblclick', () => map.removeLayer(m));
+            activeMarkers.push(m);
+        }
+
+        document.getElementById('btn-gps').classList.remove('btn-active');
+        document.getElementById('btn-marker').classList.remove('btn-active');
+        clickMode = null;
+        document.getElementById('map').style.cursor = "";
+    });
+
+    function addNewWaypoint() {
+        const list = document.getElementById('waypoint-list');
+        const end = document.getElementById('end-node');
+        const input = document.createElement('input');
+        input.className = 'route-input'; input.placeholder = 'Спирка...';
+        list.insertBefore(input, end);
+    }
+
+    async function getPoint(q) {
+        const coordRegex = /^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?),\s*[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/;
+        if (coordRegex.test(q.replace(/\s/g, ''))) {
+            const p = q.replace(/\s/g, '').split(',');
+            return L.latLng(parseFloat(p[0]), parseFloat(p[1]));
+        }
+        try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+            const d = await r.json();
+            return d[0] ? L.latLng(d[0].lat, d[0].lon) : null;
+        } catch (err) { return null; }
+    }
+
+    async function runRoute() {
+        const inputs = document.querySelectorAll('.route-input');
+        const waypoints = [];
+        for (let inp of inputs) {
+            if (inp.value) {
+                const pt = await getPoint(inp.value);
+                if (pt) waypoints.push(pt);
+            }
+        }
+        if (waypoints.length < 2) return alert("Минимум 2 точки за маршрут.");
+
+        if (routingControl) map.removeControl(routingControl);
+        routingControl = L.Routing.control({
+            waypoints: waypoints,
+            lineOptions: { styles: [{color: '#1a73e8', weight: 7, opacity: 0.85}] },
+            createMarker: function() { return null; }
+        }).addTo(map);
+
+        routingControl.on('routesfound', function(e) {
+            const dist = (e.routes[0].summary.totalDistance / 1000).toFixed(1);
+            document.getElementById('calc-output').style.display = 'block';
+            document.getElementById('dist-val').innerText = dist;
+            document.getElementById('fuel-val').innerText = (dist * 0.3).toFixed(1);
+
+            const startVal = inputs[0].value;
+            const endVal = inputs[inputs.length-1].value;
+            currentRouteData = { start: startVal, end: endVal, dist: dist, timestamp: Date.now() };
+
+            const isDuplicate = currentAutoHistory.some(item => item.start === startVal && item.end === endVal);
+            if (!isDuplicate) {
+                const uid = auth.currentUser.uid;
+                const ref = rdb.ref(`users/${uid}/auto_history`);
+                ref.push(currentRouteData);
+                ref.once('value', snap => {
+                    if(snap.numChildren() > 5) {
+                        const keys = Object.keys(snap.val());
+                        ref.child(keys[0]).remove();
+                    }
+                });
+            }
+        });
+    }
+
+    function saveToArchive() {
+        if (!currentRouteData) return alert("Първо генерирайте маршрут.");
+        const uid = auth.currentUser.uid;
+        rdb.ref(`users/${uid}/archive`).push(currentRouteData).then(() => alert("Успешно добавено в архива."));
+    }
+
+    function listenToData() {
+        const uid = auth.currentUser.uid;
+        rdb.ref(`users/${uid}/auto_history`).on('value', snap => {
+            let h = ''; currentAutoHistory = []; let data = [];
+            snap.forEach(c => {
+                const val = c.val(); data.push({key: c.key, val: val}); currentAutoHistory.push(val);
+            });
+            data.reverse().forEach(item => {
+                h += `<div class="history-item" onclick="applyR('${item.val.start}','${item.val.end}')">
+                        <span>${item.val.start} ➡ ${item.val.end}</span>
+                        <span style="color:#1a73e8; font-weight:bold;">${item.val.dist}km</span>
+                      </div>`;
+            });
+            document.getElementById('auto-history').innerHTML = h;
+        });
+
+        rdb.ref(`users/${uid}/archive`).on('value', snap => {
+            let h = ''; let data = [];
+            snap.forEach(c => { data.push({key: c.key, val: c.val()}); });
+            data.reverse().forEach(item => {
+                h += `<div class="history-item" style="border-left: 5px solid var(--beton-green);" onclick="applyR('${item.val.start}','${item.val.end}')">
+                        <span>⭐ ${item.val.start} - ${item.val.end}</span>
+                        <span class="del-btn" onclick="event.stopPropagation(); deleteData('${item.key}')">🗑️</span>
+                      </div>`;
+            });
+            document.getElementById('manual-archive').innerHTML = h;
+        });
+    }
+
+    function deleteData(key) {
+        if(confirm("Изтриване от фирмен архив?")) {
+            rdb.ref(`users/${auth.currentUser.uid}/archive/${key}`).remove();
+        }
+    }
+
+    function applyR(s, e) {
+        document.getElementById('start-node').value = s;
+        document.getElementById('end-node').value = e;
+        runRoute();
+    }
+
+    function exportForViber() {
+        if(!currentRouteData) return alert("Няма данни за копиране.");
+        const gps = document.getElementById('coord-display').innerText;
+        const t = `🚛 ЛОГИСТИЧЕН ОТЧЕТ\n🗺️ Маршрут: ${currentRouteData.start} ➡ ${currentRouteData.end}\n📏 Общо: ${currentRouteData.dist} км\n⛽ Гориво: ${document.getElementById('fuel-val').innerText} л.\n📍 GPS Точка: ${gps}`;
+        navigator.clipboard.writeText(t);
+        alert("Копирано в клипборда.");
+    }
+</script>
+</body>
+</html>
